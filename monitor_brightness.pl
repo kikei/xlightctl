@@ -8,8 +8,13 @@ Adjust your monitor's brightness manually in CUI.
 http://perldoc.perl.org/perlfaq5.html#How-can-I-read-a-single-character-from-a-file%3f-From-the-keyboard%3f
 =cut
 
-sub X_BACKLIGHT_BRIGHTNESS_STEP() { 0.2 }
-sub X_BACKLIGHT_BRIGHTNESS_MAX() { 10.0 }
+sub BRIGHTLIGHT_MIN() { 0 }
+sub BRIGHTLIGHT_MAX() { 200 }
+sub BRIGHTLIGHT_WARN_MIN() { 30 }
+sub BRIGHTLIGHT_WARN_MAX() { 150 }
+sub BRIGHTLIGHT_STEP() { 4 }
+# sub X_BACKLIGHT_BRIGHTNESS_STEP() { 0.2 }
+# sub X_BACKLIGHT_BRIGHTNESS_MAX() { 10.0 }
 sub BRIGHTNESS_MIN()  { 0.0 }
 sub BRIGHTNESS_MAX()  { 1.0 }
 
@@ -28,37 +33,99 @@ while (@ms >= 2) {
     }
 }
 
-my $m = substr($ms[0], 0, index $ms[0], " ");
+my $m = $ms[0];
+my $m = substr($m, 0, index $m, " ");
 
-my $current = `xbacklight -get`;
-printf "Current: %02.2f\n", $current;
+my $current = get_brightness();
+printf "Current: %d\n", $current;
+
+my $step = BRIGHTLIGHT_STEP();
+my $max = BRIGHTLIGHT_MAX();
+my $min = BRIGHTLIGHT_MIN();
+my $warn_max = BRIGHTLIGHT_WARN_MAX();
+my $warn_min = BRIGHTLIGHT_WARN_MIN();
 
 my $in = "";
 do {
     $in = read_input("+-q^");
     if ($in eq "+") {
-        $current += X_BACKLIGHT_BRIGHTNESS_STEP;
+        $current += $step;
     } elsif ($in eq "-") {
-        $current -= X_BACKLIGHT_BRIGHTNESS_STEP;
+        $current -= $step;
     } elsif ($in eq "^") {
-        $current = X_BACKLIGHT_BRIGHTNESS_MAX;
+        $current = $max;
     }
-    $current = BRIGHTNESS_MIN if ($current < BRIGHTNESS_MIN);
-    if ($current < 1.0 || $current > X_BACKLIGHT_BRIGHTNESS_MAX) {
+    $current = $min if ($current < $min);
+    if ($current < $warn_min || $current > $warn_max) {
         print "Warn: current brightness=$current\n";
     }
-    my $mcur = xbacklight_to_xrandr_brightness($current);
-    `xbacklight -set $current`;
-    `xrandr --output $m --brightness $mcur`;
+    set_brightness($current);
 } while ($in ne "q");
 
 if ($in eq "q") {
-    my $mcur = xbacklight_to_xrandr_brightness($current);
-    printf "xbacklight -set %02.2f\n", $current;
-    printf "xrandr --output %s --brightness %02.4f\n", $m, $mcur;
+    show_brightness($current);
 }
 
 exit;
+
+sub get_brightness {
+    get_brightlight();
+}
+
+sub set_brightness {
+    my $value = shift;
+    set_brightlight($value);
+    if ($m) {
+        my $xrvalue = brightlight_to_xrandr_brightness($value);
+        set_xrandr_brightness($xrvalue);
+    }
+    show_brightness();
+}
+
+sub show_brightness {
+    my $value = shift;
+    show_brightlight();
+    if ($m) {
+        show_xrandr_brightness();
+    }
+}
+
+sub set_brightlight {
+    my $value = shift;
+    `brightlight -w $value`;
+}
+
+sub get_brightlight {
+    my $output = `brightlight -r`;
+    if ($output =~ m/(\d+)/) {
+        $1;
+    } else {
+        warn "Unable to get brightness value from brightlight";
+	0;
+    }
+}
+
+sub show_brightlight {
+    printf "brightlight -set %d\n", get_brightlight();
+}
+
+sub set_xrandr_brightness {
+    my $value = shift;
+    `xrandr --output $m --brightness $value`;
+}
+
+sub show_xrandr_brightness {
+    my $blvalue = get_brightlight();
+    my $xrvalue = brightlight_to_xrandr_brightness($blvalue);
+    printf "xrandr --output %s --brightness %02.4f\n", $m, $xrvalue;
+}
+
+sub brightlight_to_xrandr_brightness {
+    my $bl = shift;
+    my $xr = $bl / 300.0;
+    $xr = BRIGHTNESS_MAX if ($xr > BRIGHTNESS_MAX);
+    $xr;
+}
 
 sub xbacklight_to_xrandr_brightness {
     my $backlight = shift;
